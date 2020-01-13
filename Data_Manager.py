@@ -31,7 +31,7 @@ class ConditionalFormat:
 
 
 # if the DataTable has formatting options it should be entered as a Dict where
-# {column: ConditionalFormat}
+# {column: [ConditionalFormat,]}
 class DataTable:
 
     def __init__(
@@ -89,7 +89,7 @@ class Chart:
         self.chart_type = chart_type
         self.name = name
         self.nw_corner = nw_corner
-        self.category_col = category_col,
+        self.category_col = category_col
         self.values_col = values_col
 
 
@@ -127,6 +127,15 @@ class ExcelManager:
             self.writer.sheets[sheet] = self.writer.book.add_worksheet(
                 sheet
             )
+        self.writer.sheets[sheet].write_string(
+            dt.start_row,
+            dt.start_col,
+            dt.title
+        )
+        dt.set_start(
+            dt.start_row + 1,
+            dt.start_col
+        )
         dt.df.to_excel(
             self.writer,
             sheet,
@@ -139,7 +148,7 @@ class ExcelManager:
                 for form in dt.formatting[column]:
                     format_row_start = dt.start_row+2
                     format_row_end = dt.end_row+1
-                    col = self.exalpha[dt.df.columns.get_loc(column)+1]
+                    col = self.exalpha[dt.start_col + dt.df.columns.get_loc(column)+1]
                     cell_format = self.writer.book.add_format(form.format)
                     if form.value:
                         self.writer.sheets[sheet].conditional_format(
@@ -151,19 +160,17 @@ class ExcelManager:
                                 'format': cell_format
                             }
                         )
-                        print()
                     else:
                         self.writer.sheets[sheet].conditional_format(
                             f"{col}{format_row_start}:{col}{format_row_end}",
                             {
-                                'type': form.chart_type,
+                                'type': form.condition_type,
                                 'criteria': form.criteria,
                                 'minimum': form.minimum,
                                 'maximum': form.maximum,
                                 'format': cell_format
                             }
                         )
-                        print()
 
     # charts can only be written AFTER the chart.source has been written to the workbook FIRST
     def write_chart(
@@ -171,31 +178,34 @@ class ExcelManager:
             chart: Chart
     ) -> None:
         sheet = chart.source.sheet
-        workbook = self.writer.book
-        c_loc = self.exalpha[chart.source.df.columns.get_loc(chart.category_col)]
-        v_loc = self.exalpha[chart.source.df.columns.get_loc(chart.values_col)]
+        if chart.category_col == 'index':
+            c_loc = self.exalpha[chart.source.start_col]
+        else:
+            c_loc = self.exalpha[chart.source.start_col + chart.source.df.columns.get_loc(chart.category_col)+1]
+        v_loc = self.exalpha[chart.source.start_col + chart.source.df.columns.get_loc(chart.values_col)+1]
 
         if sheet not in self.writer.sheets:
-            worksheet = workbook.add_worksheet(
+            self.writer.book.add_worksheet(
                 sheet
             )
-        else:
-            worksheet = self.writer.sheets[sheet]
-        chart_to_add = workbook.add_chart({'type': chart.chart_type})
+        chart_to_add = self.writer.book.add_chart({'type': chart.chart_type})
         chart_to_add.add_series(
             {
                 'name': chart.name,
-                'categories': f"={sheet}!${c_loc}${chart.source.start_row}:${c_loc}${chart.source.end_row}",
-                'values': f"={sheet}!${v_loc}${chart.source.start_row}:${v_loc}${chart.source.end_row}"
+                'categories': f"={sheet}!${c_loc}${chart.source.start_row+2}:${c_loc}${chart.source.end_row+1}",
+                'values': f"={sheet}!${v_loc}${chart.source.start_row+2}:${v_loc}${chart.source.end_row+1}"
             }
         )
-        worksheet.insert_chart(chart.nw_corner, chart_to_add)
+        self.writer.sheets[sheet].insert_chart(chart.nw_corner, chart_to_add)
 
     def save_close(
             self
     ) -> None:
+        print("Saving Workbook . . .")
         self.writer.save()
+        print("Closing Workbook . . .")
         self.writer.close()
+        print("Success!")
 
 
 # retrieve a Dataframe from a url
